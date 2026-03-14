@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mathverse: The Fractal Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js", "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/" } }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cyan: #22d3ee; --indigo: #6366f1; --purple: #a855f7; --gold: #fbbf24;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: 'Rajdhani', sans-serif; overflow: hidden; background: #000008; color: white; }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        /* Glass */
+        .glass {
+            background: linear-gradient(135deg, rgba(20,20,50,.65), rgba(8,8,25,.5));
+            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255,255,255,.07);
+            box-shadow: 0 8px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+        }
+        .glass-border { position: relative; }
+        .glass-border::before {
+            content:''; position:absolute; inset:-1px; border-radius:inherit;
+            background: linear-gradient(135deg, var(--cyan), var(--indigo), var(--purple));
+            opacity: .25; z-index: -1; animation: borderPulse 3s ease infinite;
+        }
+        @keyframes borderPulse { 0%,100%{opacity:.15} 50%{opacity:.4} }
+
+        /* Input */
+        .input-box {
+            background: rgba(0,0,20,.6); border: 1.5px solid rgba(99,102,241,.4); color: #e0e7ff;
+            text-align: center; border-radius: .5rem; padding: .45rem .75rem;
+            font-family: 'Orbitron', sans-serif; font-size: 1.1rem; outline: none;
+            transition: border-color .2s, box-shadow .2s;
+        }
+        .input-box:focus { border-color: var(--cyan); box-shadow: 0 0 18px rgba(34,211,238,.3); }
+        .input-box.correct { border-color:#22c55e; background:rgba(34,197,94,.1); }
+        .input-box.wrong   { border-color:#ef4444; background:rgba(239,68,68,.1); animation: inputShake .35s ease; }
+        @keyframes inputShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+
+        /* Buttons */
+        .submit-btn {
+            background: linear-gradient(180deg,#6366f1,#4f46e5);
+            box-shadow: 0 4px 0 #312e81, 0 0 18px rgba(99,102,241,.3);
+            border: none; cursor: pointer; transition: transform .15s, box-shadow .15s;
+        }
+        .submit-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 0 #312e81, 0 0 28px rgba(99,102,241,.5); }
+        .submit-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #312e81; }
+        .submit-btn:disabled { opacity:.45; cursor:not-allowed; }
+        .submit-btn.success { background:linear-gradient(180deg,#22c55e,#16a34a); box-shadow:0 4px 0 #14532d,0 0 18px rgba(34,197,94,.3); }
+
+        .hint-btn {
+            background: rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25);
+            color:#fbbf24; cursor:pointer; transition:all .2s; border-radius:.75rem;
+            padding:.5rem .9rem; font-family:'Orbitron',sans-serif; font-size:.65rem;
+            font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+        }
+        .hint-btn:hover:not(:disabled) { background:rgba(251,191,36,.18); border-color:rgba(251,191,36,.6); }
+        .hint-btn:disabled { opacity:.35; cursor:default; }
+
+        /* Player */
+        .player { transition: left 1.3s cubic-bezier(.45,0,.55,1), bottom 1.3s cubic-bezier(.45,0,.55,1); }
+
+        /* Stars */
+        @keyframes starPop { 0%{transform:scale(0) rotate(-30deg);opacity:0} 70%{transform:scale(1.3) rotate(5deg)} 100%{transform:scale(1) rotate(0);opacity:1} }
+        .star-anim { animation: starPop .45s cubic-bezier(.34,1.56,.64,1) forwards; opacity:0; }
+
+        /* Level nodes */
+        @keyframes nodeIn { from{transform:scale(.2);opacity:0} to{transform:scale(1);opacity:1} }
+        .level-node { cursor:pointer; animation: nodeIn .35s cubic-bezier(.34,1.56,.64,1) forwards; opacity:0; }
+        .level-node:hover .node-ring { transform:scale(1.18); }
+        .node-ring { transition: transform .2s ease; }
+
+        /* Shake */
+        @keyframes screenShake { 0%,100%{transform:translateX(0)} 10%,30%,50%,70%,90%{transform:translateX(-6px)} 20%,40%,60%,80%{transform:translateX(6px)} }
+        .shake { animation: screenShake .4s ease; }
+
+        /* Messages */
+        @keyframes msgIn  { from{opacity:0;transform:translateY(16px) scale(.9)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes msgOut { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-12px)} }
+        .msg-in  { animation: msgIn  .3s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .msg-out { animation: msgOut .3s ease forwards; }
+
+        /* Fractions */
+        .frac-opt {
+            cursor:pointer; transition: transform .2s, box-shadow .2s, border-color .2s;
+            border:1.5px solid rgba(168,85,247,.25); border-radius:.875rem;
+            padding:.9rem 1.3rem; user-select:none;
+        }
+        .frac-opt:hover { transform:scale(1.1) translateY(-3px); border-color:rgba(168,85,247,.6); box-shadow:0 10px 25px rgba(168,85,247,.2); }
+        .frac-opt.chosen { border-color:var(--cyan); box-shadow:0 0 22px rgba(34,211,238,.3); transform:scale(1.05); }
+
+        /* Progress bar */
+        .prog-fill { height:100%; border-radius:4px; transition: width .5s ease; }
+
+        /* Streak */
+        @keyframes streakPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
+        .streak-pulse { animation: streakPulse 1.1s ease infinite; }
+
+        /* Particles */
+        .ptcl { position:fixed; border-radius:50%; pointer-events:none; animation: ptclFly .85s ease-out forwards; }
+        @keyframes ptclFly { 0%{transform:translate(0,0) scale(1);opacity:1} 100%{transform:translate(var(--dx),var(--dy)) scale(0);opacity:0} }
+
+        /* WebGL canvas */
+        #webgl-canvas { position:fixed; top:0; left:0; z-index:-1; cursor:grab; }
+        #webgl-canvas:active { cursor:grabbing; }
+
+        /* View fade */
+        #starmap-view, #game-view { transition: opacity .35s ease; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width:4px; }
+        ::-webkit-scrollbar-thumb { background:rgba(99,102,241,.35); border-radius:2px; }
+
+        /* Planet card */
+        .planet-card { transition: transform .3s, box-shadow .3s; }
+        .planet-card:hover { transform: translateY(-5px); }
+    </style>
+</head>
+<body>
+<canvas id="webgl-canvas"></canvas>
+
+<!-- ═══════════════════════ STARMAP ═══════════════════════ -->
+<div id="starmap-view" class="w-full h-screen flex flex-col items-center overflow-hidden">
+    <div class="w-full flex items-center justify-between px-5 pt-5 pb-3 z-10 flex-shrink-0">
+        <div>
+            <h1 class="font-orbitron text-2xl sm:text-4xl text-cyan-300 tracking-widest">MATHVERSE</h1>
+            <p class="text-indigo-400 text-xs tracking-widest mt-0.5">FRACTAL EXPLORER</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <div id="streak-badge" class="hidden items-center gap-2 glass px-3 py-2 rounded-xl">
+                <span class="text-xl">🔥</span>
+                <span id="streak-label" class="font-orbitron text-orange-300 text-xs font-bold"></span>
+            </div>
+            <div class="glass px-4 py-2 rounded-xl font-orbitron text-sm">
+                <span class="text-indigo-400 text-xs">SCORE</span>
+                <span id="score-map" class="text-cyan-300 ml-2">0</span>
+            </div>
+        </div>
+    </div>
+    <div id="starmap-container" class="w-full max-w-6xl px-4 pb-4 flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 content-start overflow-y-auto"></div>
+</div>
+
+<!-- ═══════════════════════ GAME VIEW ═══════════════════════ -->
+<div id="game-view" class="hidden w-full h-screen flex-col items-center justify-center p-4">
+    <!-- Top bar -->
+    <div class="w-full max-w-2xl flex items-center justify-between mb-4 flex-shrink-0">
+        <button id="back-btn" class="glass px-3 py-2 rounded-xl font-orbitron text-xs hover:bg-indigo-500/30 transition flex items-center gap-2">← <span class="hidden sm:inline">STARMAP</span></button>
+        <div class="flex items-center gap-2">
+            <div id="lvl-badge" class="glass px-3 py-1.5 rounded-lg font-orbitron text-xs text-indigo-300"></div>
+            <div class="glass px-3 py-1.5 rounded-xl font-orbitron text-sm">
+                <span class="text-indigo-400 text-xs">SCORE</span>
+                <span id="score-game" class="text-cyan-300 ml-1">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player avatar -->
+    <div id="player" class="player fixed z-20 pointer-events-none" style="bottom:15%;left:10%;width:46px;height:46px;">
+        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M50 2.5C41.4 2.5 33.4 6.1 27.5 12.1C21.6 18.1 18.1 26.3 18.1 35C18.1 41.3 20 47.1 23.3 52.1L23.5 52.5C26.1 56.6 29.6 60.1 33.8 62.6L35.3 63.5C39.6 66.1 44.8 67.5 50 67.5C55.3 67.5 60.4 66.1 64.8 63.5L66.3 62.6C70.4 60.1 73.9 56.6 76.5 52.5L76.8 52.1C80 47.1 81.9 41.3 81.9 35C81.9 26.3 78.4 18.1 72.5 12.1C66.6 6.1 58.6 2.5 50 2.5Z" fill="#2563EB"/>
+            <path d="M50 20C58.3 20 65 26.8 65 35S58.3 50 50 50S35 43.3 35 35S41.8 20 50 20Z" fill="#BFDBFE"/>
+            <path d="M12.5 97.5L31.3 72.5L37.5 75L21.9 97.5H12.5Z" fill="#93C5FD"/>
+            <path d="M87.5 97.5L68.8 72.5L62.5 75L78.1 97.5H87.5Z" fill="#93C5FD"/>
+            <path d="M50 97.5C54.1 97.5 57.5 94.1 57.5 90S54.1 82.5 50 82.5S42.5 85.9 42.5 90S45.9 97.5 50 97.5Z" fill="#BFDBFE"/>
+        </svg>
+    </div>
+
+    <!-- Puzzle card -->
+    <div id="puzzle-card" class="glass glass-border relative z-10 w-full max-w-2xl p-5 md:p-8 rounded-2xl">
+        <div id="stars-row" class="absolute -top-6 left-1/2 -translate-x-1/2 flex gap-3"></div>
+        <h1 id="planet-title" class="font-orbitron text-xl md:text-3xl text-center text-cyan-300 tracking-wide mb-0.5"></h1>
+        <p  id="planet-lvl"   class="text-center font-orbitron text-indigo-400 text-xs tracking-widest mb-2"></p>
+        <!-- Level progress bar -->
+        <div class="w-full bg-white/5 rounded-full h-1.5 mb-4 overflow-hidden">
+            <div id="lvl-bar" class="prog-fill" style="width:0%"></div>
+        </div>
+        <p id="planet-desc" class="text-center text-indigo-200 text-sm leading-relaxed mb-4 min-h-[2.2rem]"></p>
+        <div id="puzzle-content" class="flex items-center justify-center flex-wrap gap-3 text-2xl md:text-3xl my-5 min-h-[90px]"></div>
+        <!-- Hint -->
+        <div class="min-h-[1.6rem] mb-3 text-center">
+            <span id="hint-text" class="text-amber-300/80 text-sm italic hidden"></span>
+        </div>
+        <!-- Action row -->
+        <div class="flex gap-3">
+            <button id="hint-btn" class="hint-btn flex-shrink-0">💡 HINT</button>
+            <button id="check-btn" class="submit-btn flex-1 py-2.5 px-4 rounded-xl font-orbitron text-sm sm:text-base text-white font-bold uppercase tracking-wider">Submit</button>
+        </div>
+    </div>
+
+    <!-- Floating message -->
+    <div id="msg-box" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 opacity-0 pointer-events-none px-6 py-3 rounded-xl font-orbitron text-sm font-bold glass text-center whitespace-nowrap"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+// ═══════════════════════════════════════════════════════════
+//  THREE.JS MANAGER
+// ═══════════════════════════════════════════════════════════
+const ThreeDManager = {
+    ready:false, scene:null, camera:null, renderer:null, clock:null,
+    composer:null, active:[], camGroup:null, dragging:false, prevMouse:{x:0,y:0},
+
+    init() {
+        if (this.ready) return;
+        this.scene   = new THREE.Scene();
+        this.camera  = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 2000);
+        this.camGroup = new THREE.Group();
+        this.camGroup.add(this.camera);
+        this.scene.add(this.camGroup);
+
+        const cv = document.getElementById('webgl-canvas');
+        this.renderer = new THREE.WebGLRenderer({canvas:cv, antialias:true, alpha:true});
+        this.renderer.setSize(innerWidth, innerHeight);
+        this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        this.clock = new THREE.Clock();
+
+        const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.4, 0);
+        bloom.strength = 0.9; bloom.radius = 0.6;
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.composer.addPass(bloom);
+
+        window.addEventListener('resize',  ()=>this._resize());
+        cv.addEventListener('mousedown',   e =>this._dn(e));
+        window.addEventListener('mouseup', ()=>this._up());
+        window.addEventListener('mousemove', e=>this._mv(e));
+        cv.addEventListener('touchstart',  e =>this._dn(e.touches[0]), {passive:true});
+        window.addEventListener('touchend',  ()=>this._up());
+        window.addEventListener('touchmove', e=>this._mv(e.touches[0]), {passive:false});
+
+        this.ready = true;
+        this._loop();
+    },
+
+    _resize() {
+        this.camera.aspect = innerWidth/innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(innerWidth, innerHeight);
+        this.composer.setSize(innerWidth, innerHeight);
+    },
+    _dn(e) { this.dragging=true; this.prevMouse={x:e.clientX,y:e.clientY}; },
+    _up()  { this.dragging=false; },
+    _mv(e) {
+        if (!this.dragging || !document.getElementById('game-view').classList.contains('flex')) return;
+        if (e.preventDefault) e.preventDefault();
+        const dx=e.clientX-this.prevMouse.x, dy=e.clientY-this.prevMouse.y;
+        this.camGroup.rotation.y += dx*.005;
+        this.camGroup.rotation.x = Math.max(-Math.PI/8, Math.min(Math.PI/8, this.camGroup.rotation.x+dy*.005));
+        this.prevMouse={x:e.clientX,y:e.clientY};
+    },
+    _loop() {
+        const t = this.clock.getElapsedTime();
+        this.active.forEach(o=>o.update?.(t));
+        this.camGroup.rotation.y += 0.0002;
+        this.composer.render();
+        requestAnimationFrame(()=>this._loop());
+    },
+
+    _clear() {
+        while (this.scene.children.length) this.scene.remove(this.scene.children[0]);
+        this.active = [];
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        this.scene.add(this.camGroup);
+    },
+
+    loadStarmap() {
+        this._clear();
+        this.camera.position.z = 5;
+        this.camGroup.rotation.set(0,0,0);
+        // Stars
+        const geo = new THREE.BufferGeometry();
+        const v = [];
+        for (let i=0;i<12000;i++) v.push((Math.random()-.5)*2000,(Math.random()-.5)*2000,(Math.random()-.5)*2000);
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(v,3));
+        const stars = new THREE.Points(geo, new THREE.PointsMaterial({color:0xaaaaff,size:.5,transparent:true,opacity:.8}));
+        stars.update = t => { stars.rotation.y=t*.015; stars.rotation.x=t*.005; };
+        this.scene.add(stars); this.active.push(stars);
+        // Nebula wisps
+        [0x6366f1,0x22d3ee,0xa855f7,0x3b82f6,0xec4899].forEach((c,i) => {
+            const n = new THREE.Mesh(new THREE.SphereGeometry(80+i*40,8,8), new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.025,side:THREE.BackSide}));
+            n.position.set((Math.random()-.5)*100,(Math.random()-.5)*50,-200);
+            n.update = t => n.rotation.y=t*.01*(i%2?1:-1);
+            this.scene.add(n); this.active.push(n);
+        });
+    },
+
+    loadPlanet(pi) {
+        this._clear();
+        const pd = planets[pi];
+        this.camera.position.set(0,0,8);
+        this.camGroup.rotation.set(0,0,0);
+
+        const dL = new THREE.DirectionalLight(pd.bgColor, 3); dL.position.set(5,5,5); this.scene.add(dL);
+        this.scene.add(new THREE.PointLight(0xffffff, .5, 0, 2));
+
+        const pMat = new THREE.MeshStandardMaterial({color:pd.bgColor,roughness:.7,metalness:.1,emissive:new THREE.Color(pd.bgColor).multiplyScalar(.2)});
+        const planet = new THREE.Mesh(new THREE.SphereGeometry(2,64,64), pMat);
+        planet.update = t => planet.rotation.y=t*.12;
+        this.scene.add(planet); this.active.push(planet);
+
+        if (pd.subject==='Ratios') {
+            // Watery cloud layer + ring
+            const cloud = new THREE.Mesh(new THREE.SphereGeometry(2.09,32,32), new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.1,roughness:1}));
+            cloud.update = t => { cloud.rotation.y=t*.17; cloud.rotation.x=Math.sin(t*.1)*.1; };
+            this.scene.add(cloud); this.active.push(cloud);
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2,.07,2,120), new THREE.MeshStandardMaterial({color:0x22d3ee,transparent:true,opacity:.45,emissive:0x22d3ee,emissiveIntensity:.3}));
+            ring.rotation.x = Math.PI*.35; ring.update = t => ring.rotation.z=t*.05;
+            this.scene.add(ring); this.active.push(ring);
+        }
+        if (pd.subject==='Primes') {
+            pMat.emissive=new THREE.Color(pd.bgColor); pMat.emissiveIntensity=.45;
+            for (let i=0;i<8;i++) {
+                const sp = new THREE.Mesh(new THREE.ConeGeometry(.05,.55,4), new THREE.MeshStandardMaterial({color:0xff5555,emissive:0xff1111,emissiveIntensity:1.2}));
+                const phi=Math.acos(1-2*(i+.5)/8), theta=Math.PI*(1+Math.sqrt(5))*i;
+                sp.position.setFromSphericalCoords(2.15,phi,theta);
+                sp.lookAt(0,0,0); sp.rotateX(Math.PI/2);
+                this.scene.add(sp);
+            }
+        }
+        if (pd.subject==='Area') {
+            for (let i=0;i<14;i++) {
+                const geos=[new THREE.BoxGeometry(.2,.2,.2),new THREE.TetrahedronGeometry(.15),new THREE.OctahedronGeometry(.13)];
+                const s = new THREE.Mesh(geos[i%3], new THREE.MeshStandardMaterial({color:0x22c55e,emissive:0x22c55e,emissiveIntensity:.5,wireframe:i%2===0}));
+                const baseAngle=(i/14)*Math.PI*2, radius=3+Math.random()*1.5, yOff=(Math.random()-.5)*2, speed=.2+Math.random()*.3;
+                s.update = t => { s.position.set(Math.cos(t*speed+baseAngle)*radius, yOff, Math.sin(t*speed+baseAngle)*radius); s.rotation.x=t; s.rotation.z=t*.5; };
+                this.scene.add(s); this.active.push(s);
+            }
+        }
+        if (pd.subject==='Fractions') {
+            for (let i=0;i<3;i++) {
+                const r = new THREE.Mesh(new THREE.TorusGeometry(2.5+i*.45,.045,2,120), new THREE.MeshStandardMaterial({color:0xa855f7,emissive:0xa855f7,emissiveIntensity:.35,transparent:true,opacity:.6}));
+                r.rotation.set(i*.6,i*.4,i*.3); r.update = t => { r.rotation.y=t*(.1+i*.05); r.rotation.x=t*(.05+i*.03); };
+                this.scene.add(r); this.active.push(r);
+            }
+        }
+        if (pd.subject==='Algebra') {
+            pMat.emissive=new THREE.Color(pd.bgColor); pMat.emissiveIntensity=.6;
+            const corona = new THREE.Mesh(new THREE.SphereGeometry(2.55,32,32), new THREE.MeshStandardMaterial({color:pd.bgColor,transparent:true,opacity:.12,side:THREE.BackSide}));
+            corona.update = t => corona.scale.setScalar(1+Math.sin(t*2)*.05);
+            this.scene.add(corona); this.active.push(corona);
+            for (let i=0;i<5;i++) {
+                const f = new THREE.Mesh(new THREE.SphereGeometry(.2+Math.random()*.2,8,8), new THREE.MeshBasicMaterial({color:pd.bgColor,transparent:true,opacity:.65}));
+                const a0=(i/5)*Math.PI*2, sp=.3+Math.random()*.25;
+                f.update = t => { const a=a0+t*sp; f.position.set(Math.cos(a)*2.8,Math.sin(a*.7)*.5,Math.sin(a)*2.8); };
+                this.scene.add(f); this.active.push(f);
+            }
+        }
+    },
+
+    flashCorrect() {
+        [0x00ff88,0x22d3ee,0xfbbf24].forEach((c,ci) => {
+            for (let i=0;i<3;i++) {
+                const m = new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:2,transparent:true,opacity:.9});
+                const s = new THREE.Mesh(new THREE.OctahedronGeometry(.2+Math.random()*.2),m);
+                const start=new THREE.Vector3((Math.random()-.5)*8,Math.random()*4+4,(Math.random()-.5)*4-3);
+                const end  =new THREE.Vector3((ci*3+i-4)*.9,-1,3);
+                s.position.copy(start); this.scene.add(s);
+                let p=0; this.active.push({update:()=>{ p+=.025; if(p<=1){s.position.lerpVectors(start,end,p);s.rotation.x+=.1;} }});
+            }
+        });
+    },
+    flashWrong() {
+        const m=new THREE.MeshStandardMaterial({color:0xff2222,emissive:0xff0000,emissiveIntensity:1.2,roughness:.9});
+        for (let i=0;i<4;i++) {
+            const s=new THREE.Mesh(new THREE.DodecahedronGeometry(.25),m);
+            s.position.set((Math.random()-.5)*6,(Math.random()-.5)*2,3); this.scene.add(s);
+            let life=0; this.active.push({update:()=>{ life+=.04; s.rotation.x+=.1; s.material.opacity=Math.max(0,1-life); }});
+        }
+    },
+};
+window.ThreeDManager = ThreeDManager;
+
+// ═══════════════════════════════════════════════════════════
+//  GAME STATE & DOM REFERENCES
+// ═══════════════════════════════════════════════════════════
+const GS = {
+    pi: 0, level: 1, score: 0, streak: 0, attempts: 0,
+    levelDone: false, hintUsed: false,
+    progress: [],   // progress[pi][level] = stars (1-3) | undefined
+};
+
+const El = {
+    starmapView: document.getElementById('starmap-view'),
+    starmapGrid: document.getElementById('starmap-container'),
+    gameView:    document.getElementById('game-view'),
+    player:      document.getElementById('player'),
+    puzzleCard:  document.getElementById('puzzle-card'),
+    starsRow:    document.getElementById('stars-row'),
+    planetTitle: document.getElementById('planet-title'),
+    planetLvl:   document.getElementById('planet-lvl'),
+    planetDesc:  document.getElementById('planet-desc'),
+    puzzleContent:document.getElementById('puzzle-content'),
+    checkBtn:    document.getElementById('check-btn'),
+    hintBtn:     document.getElementById('hint-btn'),
+    hintText:    document.getElementById('hint-text'),
+    msgBox:      document.getElementById('msg-box'),
+    scoreGame:   document.getElementById('score-game'),
+    scoreMap:    document.getElementById('score-map'),
+    backBtn:     document.getElementById('back-btn'),
+    lvlBar:      document.getElementById('lvl-bar'),
+    lvlBadge:    document.getElementById('lvl-badge'),
+    streakBadge: document.getElementById('streak-badge'),
+    streakLabel: document.getElementById('streak-label'),
+};
+
+// ═══════════════════════════════════════════════════════════
+//  PLANETS DEFINITION
+// ═══════════════════════════════════════════════════════════
+const isPrime = n => { if (n<2) return false; for (let i=2;i<=Math.sqrt(n);i++) if(n%i===0)return false; return true; };
+
+const planets = [
+    {
+        name:'Planet Aquaria', subject:'Ratios', bgColor:'#3b82f6', maxLevels:16,
+        emoji:'🌊', btnLabel:'Balance Equation', correctMsg:'STABILITY ACHIEVED!', incorrectMsg:'DESTABILIZATION!',
+        description: lvl => `Balance the chemical equation — the reaction uses <strong class="text-blue-300">${2*lvl}</strong> parts Hydrogen.`,
+        hint: lvl => `O₂ coefficient = ${lvl}. H₂O coefficient = ${2*lvl}. (Hydrogen atoms must balance!)`,
+        setupPuzzle: lvl => `
+            <div class="flex items-center gap-2 flex-wrap justify-center font-orbitron">
+                <span class="text-blue-300 font-bold">${2*lvl}H₂</span>
+                <span class="text-indigo-300">+</span>
+                <input id="o2" type="number" min="1" class="input-box w-16" placeholder="?"/>
+                <span class="text-blue-300 font-bold">O₂</span>
+                <span class="text-indigo-300">→</span>
+                <input id="h2o" type="number" min="1" class="input-box w-16" placeholder="?"/>
+                <span class="text-blue-300 font-bold">H₂O</span>
+            </div>`,
+        checkAnswer: lvl => parseInt(document.getElementById('o2')?.value,10)===lvl && parseInt(document.getElementById('h2o')?.value,10)===2*lvl,
+    },
+    {
+        name:'Planet Primoria', subject:'Primes', bgColor:'#ef4444', maxLevels:16,
+        emoji:'💎', btnLabel:'Align Crystals', correctMsg:'RESONANCE!', incorrectMsg:'DISCORDANCE!',
+        description: lvl => { const base=11+3*lvl; return `Find the first prime number greater than <strong class="text-red-300">${base}</strong> to align the crystals.`; },
+        hint: lvl => { const base=11+3*lvl; let n=base+1; while(!isPrime(n))n++; return `Check numbers above ${base} one by one. The answer is ${n > base+3 ? `between ${base+1} and ${n+3}` : `close to ${base}`}.`; },
+        setupPuzzle: lvl => {
+            const base=11+3*lvl;
+            return `<div class="flex flex-col items-center gap-3">
+                <p class="text-red-200 text-sm">First prime greater than <strong class="font-orbitron text-red-300 text-xl">${base}</strong></p>
+                <input id="prime_in" type="number" min="1" class="input-box w-36" placeholder="Prime?"/>
+            </div>`;
+        },
+        checkAnswer: lvl => { let n=11+3*lvl+1; while(!isPrime(n))n++; return parseInt(document.getElementById('prime_in')?.value,10)===n; },
+    },
+    {
+        name:'Planet Geometria', subject:'Area', bgColor:'#22c55e', maxLevels:16,
+        emoji:'📐', btnLabel:'Calculate Area', correctMsg:'CONSTRUCTION COMPLETE!', incorrectMsg:'STRUCTURAL FAILURE!',
+        description: lvl => lvl<=8
+            ? `Calculate the area of the <strong class="text-green-300">rectangular</strong> platform.`
+            : `Calculate the area of the <strong class="text-green-300">triangular</strong> platform.`,
+        hint: lvl => lvl<=8 ? 'Area of a rectangle = Width × Height' : 'Area of a triangle = ½ × Base × Height (round down)',
+        setupPuzzle: lvl => {
+            const w=10+lvl, h=5+lvl;
+            return lvl<=8
+                ? `<div class="flex flex-col items-center gap-3">
+                    <div class="border-2 border-dashed border-green-400 rounded-lg px-10 py-5 bg-green-500/10 flex flex-col items-center gap-1">
+                        <span class="font-orbitron text-green-300 text-sm">W = ${w} m</span>
+                        <span class="font-orbitron text-green-300 text-sm">H = ${h} m</span>
+                    </div>
+                    <input id="area_in" type="number" min="1" class="input-box w-40" placeholder="Area (m²)?"/>
+                </div>`
+                : `<div class="flex flex-col items-center gap-3">
+                    <svg width="110" height="90" viewBox="0 0 110 90">
+                        <polygon points="55,5 105,85 5,85" fill="rgba(34,197,94,.12)" stroke="#22c55e" stroke-width="2" stroke-dasharray="5,3"/>
+                        <text x="55" y="62" text-anchor="middle" fill="#86efac" font-size="11" font-family="Rajdhani">B=${w}m</text>
+                        <text x="82" y="48" fill="#86efac" font-size="11" font-family="Rajdhani">H=${h}m</text>
+                    </svg>
+                    <input id="area_in" type="number" min="1" class="input-box w-40" placeholder="Area (m²)?"/>
+                </div>`;
+        },
+        checkAnswer: lvl => {
+            const w=10+lvl, h=5+lvl;
+            const ans=lvl<=8 ? w*h : Math.floor(.5*w*h);
+            return parseInt(document.getElementById('area_in')?.value,10)===ans;
+        },
+    },
+    {
+        name:'Planet Fractionis', subject:'Fractions', bgColor:'#a855f7', maxLevels:16,
+        emoji:'⚗️', btnLabel:'Select Largest', correctMsg:'POTION BREWED!', incorrectMsg:'CONCOCTION FAILED!',
+        description: () => `Tap the <strong class="text-purple-300">largest fraction</strong> to mix the cosmic potion.`,
+        hint: () => 'Divide numerator by denominator to get a decimal, then pick the biggest.',
+        setupPuzzle: lvl => {
+            const opts=[], seen=new Set();
+            while (opts.length<3) {
+                const num=Math.ceil(Math.random()*(4+lvl));
+                const den=num+Math.ceil(Math.random()*(4+lvl));
+                const val=+(num/den).toFixed(8);
+                if (!seen.has(val)) { seen.add(val); opts.push({num,den,val}); }
+            }
+            return '<div class="flex gap-4 justify-center items-center">' +
+                opts.map(o=>`<div class="frac-opt glass flex flex-col items-center" data-val="${o.val}">
+                    <span class="text-purple-200 text-2xl font-bold font-orbitron">${o.num}</span>
+                    <div class="w-full border-t border-purple-400/60 my-1"></div>
+                    <span class="text-purple-200 text-2xl font-bold font-orbitron">${o.den}</span>
+                </div>`).join('') + '</div>';
+        },
+        checkAnswer: (_lvl, val) => {
+            const all=Array.from(document.querySelectorAll('.frac-opt')).map(e=>parseFloat(e.dataset.val));
+            return parseFloat(val)===Math.max(...all);
+        },
+    },
+    {
+        name:'Planet Infigeon', subject:'Algebra', bgColor:'#f97316', isInfinite:true,
+        emoji:'⚡', btnLabel:'Solve for X', correctMsg:'ENERGY HARNESSED!', incorrectMsg:'ENERGY SPIKE!',
+        description: () => `Solve for <strong class="text-orange-300 font-orbitron">x</strong> to harness the star's energy.`,
+        hint: () => 'x = the total (right side) minus the first number.',
+        setupPuzzle: lvl => {
+            const a=Math.ceil(Math.random()*(2*lvl)+lvl);
+            const x=Math.ceil(Math.random()*(2*lvl)+1);
+            // Store safely in dataset — no fragile HTML parsing
+            El.puzzleContent.dataset.a   = a;
+            El.puzzleContent.dataset.ans = x;
+            return `<div class="flex items-center gap-3 flex-wrap justify-center font-orbitron">
+                <span class="text-orange-300 text-2xl">${a}</span>
+                <span class="text-yellow-400 text-xl">+</span>
+                <span class="text-cyan-300 text-2xl font-bold">x</span>
+                <span class="text-yellow-400 text-xl">=</span>
+                <span class="text-orange-300 text-2xl">${a+x}</span>
+                <input id="x_in" type="number" class="input-box w-20" placeholder="x?"/>
+            </div>`;
+        },
+        checkAnswer: () => parseInt(document.getElementById('x_in')?.value,10)===parseInt(El.puzzleContent.dataset.ans,10),
+    },
+];
+
+// ═══════════════════════════════════════════════════════════
+//  AUDIO
+// ═══════════════════════════════════════════════════════════
+function beep(type) {
+    try {
+        const ctx=new(window.AudioContext||window.webkitAudioContext)();
+        const o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        if (type==='correct') {
+            o.type='sine'; o.frequency.setValueAtTime(440,ctx.currentTime);
+            o.frequency.exponentialRampToValueAtTime(880,ctx.currentTime+.3);
+            g.gain.setValueAtTime(.15,ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.6);
+        } else if (type==='wrong') {
+            o.type='square'; o.frequency.setValueAtTime(220,ctx.currentTime);
+            o.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+.35);
+            g.gain.setValueAtTime(.08,ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.5);
+        } else {
+            o.type='triangle'; o.frequency.setValueAtTime(700,ctx.currentTime);
+            g.gain.setValueAtTime(.07,ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.15);
+        }
+        o.start(); o.stop(ctx.currentTime+.8);
+    } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════════
+let msgTimer=null;
+function showMsg(text, type) {
+    const b=El.msgBox;
+    if (msgTimer) clearTimeout(msgTimer);
+    b.classList.remove('msg-in','msg-out');
+    void b.offsetWidth;
+    b.className=`fixed bottom-6 left-1/2 -translate-x-1/2 z-30 px-6 py-3 rounded-xl font-orbitron text-sm font-bold glass text-center whitespace-nowrap msg-in pointer-events-none border`;
+    b.classList.add(type==='success' ? 'border-green-400/50 text-green-300' : 'border-red-400/50 text-red-300');
+    b.textContent=text; b.style.opacity='1';
+    msgTimer=setTimeout(()=>{ b.classList.remove('msg-in'); b.classList.add('msg-out'); setTimeout(()=>{b.style.opacity='0';},320); }, 2700);
+}
+
+function movePlayer(toEnd) {
+    El.player.style.left  = toEnd ? '85%' : '10%';
+    El.player.style.bottom = toEnd ? '72%' : '15%';
+}
+
+function syncScores() {
+    El.scoreGame.textContent = GS.score;
+    El.scoreMap.textContent  = GS.score;
+}
+
+function syncStreak() {
+    if (GS.streak>=2) {
+        El.streakBadge.classList.remove('hidden'); El.streakBadge.classList.add('flex');
+        El.streakLabel.textContent=`${GS.streak}× STREAK`;
+        if (GS.streak>=3) El.streakBadge.classList.add('streak-pulse');
+        else El.streakBadge.classList.remove('streak-pulse');
+    } else {
+        El.streakBadge.classList.add('hidden'); El.streakBadge.classList.remove('flex','streak-pulse');
+    }
+}
+
+function spawnParticles(x,y,color) {
+    for (let i=0;i<14;i++) {
+        const el=document.createElement('div');
+        el.className='ptcl';
+        const a=(i/14)*Math.PI*2, d=40+Math.random()*65;
+        el.style.cssText=`left:${x}px;top:${y}px;width:8px;height:8px;background:${color};--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;`;
+        document.body.appendChild(el);
+        setTimeout(()=>el.remove(),900);
+    }
+}
+
+function switchView(showMap) {
+    const from = showMap ? El.gameView  : El.starmapView;
+    const to   = showMap ? El.starmapView : El.gameView;
+    from.style.opacity='0';
+    setTimeout(()=>{
+        from.classList.add('hidden');
+        from.classList.remove('flex');
+        from.style.opacity='1';
+        to.classList.remove('hidden');
+        if (!showMap) to.classList.add('flex');
+        to.style.opacity='0';
+        setTimeout(()=>to.style.opacity='1', 40);
+    }, 320);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STARMAP
+// ═══════════════════════════════════════════════════════════
+function buildStarmap() {
+    let html='';
+    planets.forEach((pl,pi)=>{
+        const prog=GS.progress[pi]||{};
+        const totalStars=Object.values(prog).reduce((s,v)=>s+(v||0),0);
+        const done=Object.keys(prog).filter(k=>prog[k]>0).length;
+        const nodeCount=pl.isInfinite?(done+1):pl.maxLevels;
+        const pColor=new THREE.Color(pl.bgColor);
+
+        let nodes='';
+        for (let lvl=1;lvl<=nodeCount;lvl++) {
+            const stars=prog[lvl]||0, unlocked=lvl===1||(prog[lvl-1]>0);
+            const delay=lvl*35;
+            nodes+=`<div class="level-node" style="animation-delay:${delay}ms" ${unlocked?`onclick="startLevel(${pi},${lvl})"`:``}>
+                <div class="node-ring w-9 h-9 rounded-full flex items-center justify-center text-xs font-orbitron border" style="${
+                    unlocked
+                    ? `background:${stars?pColor.getStyle()+'33':'rgba(255,255,255,.05)'};border-color:${stars?pl.bgColor:'rgba(255,255,255,.1)'};cursor:pointer;`
+                    : 'background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.06);cursor:default;'
+                }">${
+                    !unlocked ? '<span style="font-size:10px;opacity:.3">🔒</span>' :
+                    stars ? `<span style="color:#fbbf24;font-size:15px">★</span>` :
+                    `<span style="color:${pl.bgColor}">${lvl}</span>`
+                }</div>
+            </div>`;
+        }
+
+        html+=`<div class="planet-card glass rounded-2xl p-4 flex flex-col items-center gap-2 border" style="border-color:${pl.bgColor}1a">
+            <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl"
+                style="background:radial-gradient(circle at 35% 35%,${pl.bgColor},${pColor.clone().multiplyScalar(.25).getStyle()});box-shadow:0 0 22px ${pl.bgColor}33">
+                ${pl.emoji}
+            </div>
+            <h2 class="font-orbitron text-xs text-center leading-tight" style="color:${pl.bgColor}">${pl.name}</h2>
+            <p class="text-indigo-400/60 text-xs font-orbitron tracking-widest">${pl.subject.toUpperCase()}</p>
+            <div class="text-yellow-400/70 text-xs">⭐ ${totalStars}${pl.isInfinite?'':'/'+pl.maxLevels*3}</div>
+            <div class="flex flex-wrap justify-center gap-1 w-full mt-1">${nodes}</div>
+        </div>`;
+    });
+    El.starmapGrid.innerHTML=html;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL LOADING & START
+// ═══════════════════════════════════════════════════════════
+function startLevel(pi, lvl) {
+    beep('click');
+    GS.pi=pi; GS.level=lvl; GS.levelDone=false; GS.attempts=0; GS.hintUsed=false;
+    switchView(false);
+    loadLevel();
+    ThreeDManager.loadPlanet(pi);
+}
+
+function loadLevel() {
+    const pl=planets[GS.pi];
+    GS.levelDone=false; GS.attempts=0; GS.hintUsed=false;
+    document.body.style.backgroundColor=new THREE.Color(pl.bgColor).multiplyScalar(.07).getStyle();
+
+    movePlayer(false);
+    El.starsRow.innerHTML='';
+    El.hintText.classList.add('hidden');
+    El.hintBtn.disabled=false; El.hintBtn.style.opacity='1';
+
+    El.planetTitle.textContent=pl.name;
+    El.planetLvl.textContent=`LEVEL ${GS.level} · ${pl.subject.toUpperCase()}`;
+
+    // Progress bar
+    const maxLvls=pl.isInfinite ? Math.max(Object.keys(GS.progress[GS.pi]||{}).length+1,GS.level) : pl.maxLevels;
+    const pct=Math.round(((GS.level-1)/maxLvls)*100);
+    El.lvlBar.style.width=pct+'%';
+    El.lvlBar.style.background=`linear-gradient(90deg,${pl.bgColor},${new THREE.Color(pl.bgColor).lerp(new THREE.Color(0xffffff),.4).getStyle()})`;
+    El.lvlBadge.textContent=pl.isInfinite?`LVL ${GS.level}`:`${GS.level} / ${pl.maxLevels}`;
+
+    El.planetDesc.innerHTML = pl.description ? pl.description(GS.level) : '';
+    El.puzzleContent.innerHTML = pl.setupPuzzle(GS.level);
+
+    // Button reset
+    El.checkBtn.disabled=false;
+    El.checkBtn.textContent=pl.btnLabel||'Submit';
+    El.checkBtn.className='submit-btn flex-1 py-2.5 px-4 rounded-xl font-orbitron text-sm sm:text-base text-white font-bold uppercase tracking-wider';
+
+    if (pl.subject==='Fractions') {
+        El.checkBtn.classList.add('hidden');
+        document.querySelectorAll('.frac-opt').forEach(el=>el.addEventListener('click',()=>handleFracClick(el)));
+    } else {
+        El.checkBtn.classList.remove('hidden');
+        setTimeout(()=>El.puzzleContent.querySelector('input')?.focus(), 120);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ANSWER HANDLING
+// ═══════════════════════════════════════════════════════════
+function handleFracClick(el) {
+    if (GS.levelDone) return;
+    document.querySelectorAll('.frac-opt').forEach(e=>e.classList.remove('chosen'));
+    el.classList.add('chosen');
+    const correct=planets[GS.pi].checkAnswer(GS.level, el.dataset.val);
+    const r=el.getBoundingClientRect();
+    processAnswer(correct, r.left+r.width/2, r.top+r.height/2);
+}
+
+El.checkBtn.addEventListener('click', e => {
+    const pl=planets[GS.pi];
+    if (GS.levelDone) {
+        if (pl.isInfinite||GS.level<pl.maxLevels) startLevel(GS.pi,GS.level+1);
+        return;
+    }
+    processAnswer(pl.checkAnswer(GS.level), e.clientX, e.clientY);
+});
+
+// Enter key shortcut
+document.addEventListener('keydown', e => {
+    if (e.key==='Enter' && El.gameView.classList.contains('flex') && !El.checkBtn.classList.contains('hidden'))
+        El.checkBtn.click();
+});
+
+El.hintBtn.addEventListener('click', ()=>{
+    if (GS.hintUsed) return;
+    const h=planets[GS.pi].hint?.(GS.level);
+    if (h) {
+        GS.hintUsed=true;
+        El.hintText.textContent='💡 '+h;
+        El.hintText.classList.remove('hidden');
+        El.hintBtn.disabled=true; El.hintBtn.style.opacity='.35';
+    }
+});
+
+function processAnswer(correct, cx, cy) {
+    if (GS.levelDone) return;
+    GS.attempts++;
+    const pl=planets[GS.pi];
+
+    if (correct) {
+        beep('correct');
+        GS.levelDone=true;
+        GS.streak++;
+        syncStreak();
+
+        // Scoring: base, hint penalty, streak multiplier
+        const base=Math.max(100-25*(GS.attempts-1),25);
+        const hintMult=GS.hintUsed?.75:1;
+        const streakMult=GS.streak>=5?2:GS.streak>=3?1.5:GS.streak>=2?1.2:1;
+        const earned=Math.round(base*hintMult*streakMult);
+        GS.score+=earned;
+        syncScores();
+
+        // Stars (1-3)
+        const stars=GS.attempts===1?3:GS.attempts===2?2:1;
+        if (!GS.progress[GS.pi]) GS.progress[GS.pi]={};
+        GS.progress[GS.pi][GS.level]=Math.max(GS.progress[GS.pi][GS.level]||0,stars);
+
+        // Render stars with pop animation
+        El.starsRow.innerHTML=['★','★','★'].map((s,i)=>`
+            <span class="star-anim text-3xl sm:text-4xl ${i<stars?'text-yellow-400':'text-gray-600'}"
+                style="animation-delay:${i*140}ms">${s}</span>`).join('');
+
+        // Highlight inputs
+        El.puzzleContent.querySelectorAll('input').forEach(i=>i.classList.add('correct'));
+
+        // Particles
+        spawnParticles(cx, cy, '#22d3ee');
+
+        // Message with streak bonus note
+        const bonusTxt=GS.streak>=2?` +${Math.round(earned-Math.round(base*hintMult))} BONUS`:'';
+        showMsg(pl.correctMsg+bonusTxt,'success');
+
+        ThreeDManager.flashCorrect();
+        movePlayer(true);
+        save();
+
+        if (pl.isInfinite||GS.level<pl.maxLevels) {
+            El.checkBtn.textContent='Next Level →';
+            El.checkBtn.className='submit-btn success flex-1 py-2.5 px-4 rounded-xl font-orbitron text-sm sm:text-base text-white font-bold uppercase tracking-wider';
+            El.checkBtn.classList.remove('hidden');
+        } else {
+            El.checkBtn.textContent='🏆 Planet Complete!';
+            El.checkBtn.disabled=true;
+            El.checkBtn.classList.remove('hidden');
+        }
+
+    } else {
+        beep('wrong');
+        GS.streak=0;
+        syncStreak();
+
+        El.puzzleCard.classList.add('shake');
+        setTimeout(()=>El.puzzleCard.classList.remove('shake'),420);
+        El.puzzleContent.querySelectorAll('input').forEach(i=>{ i.classList.add('wrong'); setTimeout(()=>i.classList.remove('wrong'),650); });
+
+        showMsg(pl.incorrectMsg,'error');
+        ThreeDManager.flashWrong();
+
+        if (pl.subject!=='Fractions') {
+            setTimeout(()=>{
+                El.puzzleContent.querySelectorAll('input').forEach(i=>i.value='');
+                El.puzzleContent.querySelector('input')?.focus();
+            }, 520);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════
+El.backBtn.addEventListener('click', ()=>{
+    beep('click');
+    switchView(true);
+    buildStarmap();
+    ThreeDManager.loadStarmap();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  PERSISTENCE
+// ═══════════════════════════════════════════════════════════
+function save() {
+    try {
+        localStorage.setItem('mvProg',  JSON.stringify(GS.progress));
+        localStorage.setItem('mvScore', GS.score);
+        localStorage.setItem('mvStreak',GS.streak);
+    } catch(e){}
+}
+
+function load() {
+    try {
+        const p=localStorage.getItem('mvProg');
+        GS.progress=p ? (() => { const parsed=JSON.parse(p); return parsed.length===planets.length?parsed:planets.map(()=>({})); })() : planets.map(()=>({}));
+        GS.score =parseInt(localStorage.getItem('mvScore') ||'0');
+        GS.streak=parseInt(localStorage.getItem('mvStreak')||'0');
+    } catch(e){ GS.progress=planets.map(()=>({})); }
+    syncScores(); syncStreak();
+}
+
+window.addEventListener('beforeunload', save);
+
+// ═══════════════════════════════════════════════════════════
+//  BOOTSTRAP
+// ═══════════════════════════════════════════════════════════
+window.startLevel=startLevel;
+
+ThreeDManager.init();
+load();
+buildStarmap();
+ThreeDManager.loadStarmap();
+</script>
+</body>
+</html>
